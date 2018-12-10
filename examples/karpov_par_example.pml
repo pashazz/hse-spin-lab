@@ -10,178 +10,178 @@ bool send_d0 = false; bool send_d1 = false;
 bool receive_d0 = false; bool receive_d1 = false;
 mtype currGlobalMt;
 
-proctype A(chan Sender_Out) {
+proctype A(chan Sender_Out) { /* Пользователь A */
     mtype mt;
 
-    S0: Sender_Out!d0_A;
+    S0: Sender_Out!d0_A; /* Начальное состояние - посылаем сообщение d0, переходим в состояние посылки d1 */
         goto S1
 
-    S1: Sender_Out!d1_A;
+    S1: Sender_Out!d1_A; /*  Состояние посылки d1  - посылаем сообщение d1, переходим в состояние посылки d0 */
         goto S2
 
-    S2: Sender_Out!d0_A;
+    S2: Sender_Out!d0_A; /* Состояние посылки d0 - посылаем сообщение d0, переходим в состояние посылки d1 */
         goto S1
 
 }
 
-proctype Sender(chan A_In, Channel2_In, Channel1_Out) {
+proctype Sender(chan A_In, Channel2_In, Channel1_Out) { /* Передатчик S */
     mtype mt;
-    bool time_s2 = false;
+    bool time_s2 = false; /* Находимся ли мы в режиме ожидания подтверждения приема сообщения типа d0 от R*/
     bool time_s5 = false;
 
-    S0: A_In?d0_A ->
+    S0: A_In?d0_A -> /* От пользователя A пришло сообщение типа d0 (на этой строке выполнение блокируется до получения сообщения данного типа)*/
             atomic {
-                send_d0 = true;
-                send_d1 = false;
-                currGlobalMt = d0_A;
+                send_d0 = true; /* Уточняем намерение, что посылаем d0 */
+                send_d1 = false; /* Но не d1 */
+                currGlobalMt = d0_A; /* Текущее состояние системы - приемка d0 от A */
             }
-        goto S1;
+        goto S1; /* переходим к посылкe сообщения d0 */
 
-    S1: Channel1_Out!d0_Sender;
-        goto S2;
+    S1: Channel1_Out!d0_Sender; /* Посылаем в R по каналу Channel 1 сообщение d0 */
+        goto S2;  /* Переходим к ожиданию подтверждения */
 
-    S2: if
-        ::  Channel2_In?ACK_Channel2 ->
-                currGlobalMt = ACK_Channel2
-                time_s2 = false
-                goto S3
-        ::  (!time_s2) ->
-                currGlobalMt = TIME_TRANSITION
-                time_s2 = true
-                goto S1
+    S2: if /* Ожидание подтверждения. ВНИМАНИЕ - Недетерминированный if - если подтверждение пришло, но time_s2 = false, то выполнение может пойти по ветке (!time_s2). Вообще если несколько условий верны, то выбирается рандомное */
+        ::  Channel2_In?ACK_Channel2 -> /* От R по каналу Channel 2 пришло подтверждение приема сообщения */
+                currGlobalMt = ACK_Channel2 /* Текущее состояние системы - подтверждение получено */
+                time_s2 = false /* Более сообщение типа d0 по каналу 2 (от R) не ожидается */
+                goto S3 /* переходим к получению сообщения d1 от пользователя A  */
+        ::  (!time_s2) -> /* мы не в режиме ожидания - нужно перейти в режим ожидания */
+                currGlobalMt = TIME_TRANSITION /* Текущее состояние системы - ожидание */
+                time_s2 = true /* мы в режиме ожидания подтверждения получения сообщения типа d0 от R */
+                goto S1 /* переходим к посылке сообщения d0 к R. Это будет повторная посылка. Нетрудно заметить, что это будет одна повторная посылка, т.к. time_s2 теперь true и мы больще в эту ветку не зайдем до получения ACK_Channel2 как минимум */
         fi;
 
-    S3: A_In?d1_A ->
+    S3: A_In?d1_A -> /* пришло сообщение типа d1 */
             atomic {
-                send_d0 = false;
-                send_d1 = true;
-                currGlobalMt = d1_A;
+                send_d0 = false; /* Уточняем намерение, что посылаем d1 */
+                send_d1 = true; /* но не d0 */
+                currGlobalMt = d1_A; /* Текущее состояние системы - приемка d1 от A */
             }
-        goto S4;
+        goto S4; /* Переходим к посылке сообщения d1 */
 
-    S4: Channel1_Out!d1_Sender;
-        goto S5;
+S4:Channel1_Out!d1_Sender; /* Посылаем в R по каналу Channel 2 сообщение d1 */
+        goto S5; /* Переходим к ожиданию подтверждения */
 
-    S5: if
-        ::  Channel2_In?ACK_Channel2 -> 
-                time_s5 = false
-                currGlobalMt = ACK_Channel2;
-                goto S0
-        ::  (!time_s5) ->
-                currGlobalMt = TIME_TRANSITION
-                time_s5 = true
-                goto S4
+S5:if  /* Ожидание подтверждения. ВНИМАНИЕ - Недетерминированный if - если подтверждение пришло, но time_s5 = false, то выполнение может пойти по ветке (!time_s5). Вообще если несколько условий верны, то выбирается рандомное */
+          ::  Channel2_In?ACK_Channel2 -> /* От R по каналу Channel 2 пришло подтверждение приема сообщения */
+             time_s5 = false /* Более сообщение типа d1  по каналу 2 (от R) не ожидается */
+             currGlobalMt = ACK_Channel2; /* Текущее состояние системы - подтверждение получено */
+             goto S0 /* переходим к ожиданию от А сообщения типа d0 */
+        ::  (!time_s5) -> /* мы не в режиме ожидания сообщения типа d1 от A */
+                currGlobalMt = TIME_TRANSITION /* текущее состояние системы - ожидание */
+                time_s5 = true  /* мы в режиме ожидания подтверждения получения сообщения типа d0 от R */
+                goto S4  /* переходим к посылке сообщения d1 к R. Это будет повторная посылка. Нетрудно заметить, что это будет одна повторная посылка, т.к. time_s5 теперь true и мы больще в эту ветку не зайдем до получения ACK_Channel2 как минимум */
         fi;
 }
 
-proctype Channel1(chan Sender_In, Receiver_Out) {
-    mtype mt;
-    bool loss_ch1_s1 = false;
-    bool loss_ch1_s2 = false;
-    
-    S0: Sender_In?mt
-        currGlobalMt = mt;
-        if
-        ::  (mt == d0_Sender) -> goto S1
-        ::  (mt == d1_Sender) -> goto S2
+proctype Channel1(chan Sender_In, Receiver_Out) { /* Канал Ch1 - передатчик посылает, приемник получает */
+    mtype mt; /* Тип текущего сообщения */
+    bool loss_ch1_s1 = false; /* Было ли потеряно ли сообщение типа 1 */
+    bool loss_ch1_s2 = false; /* Было ли потеряно ли сообщение типа 2 */
+
+    S0: Sender_In?mt /* От передатчика S получено любое сообщение и записано в mt (процесс блокируется до получения сообщения) */
+        currGlobalMt = mt; /* Текущее состояние системы - сообщение */
+        if /* ВНИМАНИЕ - Это детерминированный if, поскольку условия взаимоисключающие */
+        ::  (mt == d0_Sender) -> goto S1 /* если получено сообщение d0, идем в обработчик d0 */
+        ::  (mt == d1_Sender) -> goto S2 /* если получено сообщение d1, идем в обработчик d1 */
         fi;
 
-    S1: do
-        ::  Receiver_Out!d0_Channel1;
-            loss_ch1_s1 = false
-            goto S0;
-        ::  (!loss_ch1_s1) ->
-                currGlobalMt = LOSS_Channel1
-                loss_ch1_s1 = true
-                goto S0
+    S1: do /* do работает как if, но возвращается к началу do после выполнения инструкций по одной из веток. Но здесь никуда он не возвращается, потому что последняя инструкция есть goto. Условия тут недетерминированы, потому что loss_ch1_s1 вполне может быть false, а Receiver_Out!d0_channel1 работает всегда. Таким образом, если loss_ch1_s1=false с вероятностью 1/2 сообщение будет потеряно*/
+        ::  Receiver_Out!d0_Channel1; /* Посылаем сообщение d0 к R */
+            loss_ch1_s1 = false /* Сообщение d0 не было потеряно*/
+            goto S0; /* Возвращаемся к ожиданию приема сообщений */
+        ::  (!loss_ch1_s1) -> /* Сообщение d0 не было потеряно, но раз уж мы сюда зашли, то его надо потерять */
+                currGlobalMt = LOSS_Channel1 /* текущее состояние системы - потеря сообщения в канале 1 */
+                loss_ch1_s1 = true /* Уточняем, что сообщение типа d0 было потеряно */
+                goto S0 /* Возвращаемся к ожиданию приема сообщений */
         od;
 
-    S2: do
-        ::  Receiver_Out!d1_Channel1
-            loss_ch1_s2 = false;
-            goto S0
-        ::  (!loss_ch1_s2) ->
-                currGlobalMt = LOSS_Channel1
-                loss_ch1_s2 = true
-                goto S0
+    S2: do /* обработчик d1, аналогичен S1 - недетерминированный do */
+        ::  Receiver_Out!d1_Channel1 /* посылаем сообщения типа d1 к R */
+            loss_ch1_s2 = false; /* Сообщение d1 не было потеряно */
+            goto S0 /* Возвращаемся к ожиданию приема сообщений */
+        ::  (!loss_ch1_s2) -> /* Сообщение d1 не было потеряно, но раз уж мы сюда зашли, то его надо потерять */
+                currGlobalMt = LOSS_Channel1  /* текущее состояние системы - потеря сообщения в канале 1 */
+                loss_ch1_s2 = true /* Уточняем, что сообщение типа d1 было потеряно */
+                goto S0 /* Возвращаемся к ожиданию приема сообщений */
         od;
 }
 
-proctype Channel2(chan Receiver_In, Sender_Out) {
-    mtype mt;
-    bool loss_ch2_s1 = false;
+proctype Channel2(chan Receiver_In, Sender_Out) { /* Канал ch2 - Приемник посылает, передатчик получает */
+    mtype mt; /* Тип текущего сообщения */
+    bool loss_ch2_s1 = false; /* Было ли потеряно сообщение в канале 2  */
 
-    S0: Receiver_In?ACK_Receiver
-        currGlobalMt = ACK_Receiver;
-        goto S1;
+    S0: Receiver_In?ACK_Receiver /* От приемника R получено сообщение о подтверждении передачи */
+        currGlobalMt = ACK_Receiver; /* Текущее состояние системы - приемник получил сообщение */
+        goto S1; /* Переходим к посылке сообщения к передатчику */
 
-    S1: do
-        ::  Sender_Out!ACK_Channel2
-            loss_ch2_s1 = false
-            goto S0
-        ::  (!loss_ch2_s1) ->
-                currGlobalMt = LOSS_Channel2
-                loss_ch2_s1 = true
-                goto S0
+    S1: do /* Недетерминированный do - либо посылает сообщение передатчику, либо регистрирует потерю сообщения в канале */
+        ::  Sender_Out!ACK_Channel2 /* Посылаем сообщение передатчику */
+            loss_ch2_s1 = false /* Сообщение не было потеряно */
+            goto S0 /* Переходим к получению сообщения от приемника R */
+        ::  (!loss_ch2_s1) -> /* Сообщение потеряно не было, значит его надо потерять */
+                currGlobalMt = LOSS_Channel2 /* Текущее состояние системы - потеря сообщения в канале 2 */
+                loss_ch2_s1 = true /* Сообщение было потеряно, посему во второй раз мы в эту ветку не зайдем */
+                goto S0 /* Переходим к получению сообщения от приемника R */
         od;
 }
 
 proctype Receiver(chan Channel1_In, B_Out, Channel2_Out) {
     mtype mt;
 
-    S0: Channel1_In?mt
-        currGlobalMt = mt;
-        if
-        ::  (mt == d0_Channel1) -> goto S1
-        ::  (mt == d1_Channel1) -> goto S5
+    S0: Channel1_In?mt /* Сообщение было получено по каналу 1 и записано в mt. Т.к. это начальное состояние, то мы тут ожидаем d0, а если пришло d1, то это дубль и мы просто посылаем подтверждение того что мы его получили */
+        currGlobalMt = mt; /* Текущее состояние системы - полученное сообщение */
+        if /* Детерминированный if - взаимоисключающие условия */
+        ::  (mt == d0_Channel1) -> goto S1  /* Переходим к посылке  сообщение d0 в B */
+        ::  (mt == d1_Channel1) -> goto S5 /* Переходим к посылке подтверждения прихода сообщения в Channel 2 */
         fi;
 
-    S1: B_Out!d0_Receiver;
-        goto S2;
+    S1: B_Out!d0_Receiver; /* Посылаем сообщение d0 в B */
+        goto S2; /* Переходим к посылке подтверждения получения d0 в канал 2 */
 
-    S2: Channel2_Out!ACK_Receiver;
-        goto S3
+    S2: Channel2_Out!ACK_Receiver; /* Посылаем подтверждение получения (d0, хотя тут это не указано явно, а идет неявно) в канал 2*/
+        goto S3 /* Переходим к получению сообщения d1 по каналу 1 */
 
-    S3: Channel1_In?mt
-        currGlobalMt = mt
-        if
-        ::  (mt == d0_Channel1) -> goto S2
-        ::  (mt == d1_Channel1) -> goto S4
+    S3: Channel1_In?mt /* Сообщение было получено по каналу 1 и записано в mt. Тут мы ожидаем d1, а если приходит d0, то это дубль и мы просто посылаем подтверждение того, что мы его получили  */
+        currGlobalMt = mt  /* Текущее состояние системы - полученное сообщение */
+        if /* Детерминированный if */
+        ::  (mt == d0_Channel1) -> goto S2 /* Переходим к посылке подтверждения получения сообщения в канал 2 */
+        ::  (mt == d1_Channel1) -> goto S4 /* Переходим к посылке  сообщения типа d1 в B */
         fi;
 
-    S4: B_Out!d1_Receiver;
-        goto S5;
+    S4: B_Out!d1_Receiver; /* Посылаем сообщение типа d1 в B */
+        goto S5; /* Переходим к посылке подтверждения получения d1 в канал 2 */
 
-    S5: Channel2_Out!ACK_Receiver;
-        goto S0
+    S5: Channel2_Out!ACK_Receiver; /* Посылаем подтверждение получения (d1, хотя тут это не указано явно, а идет неявно) в канал 2*/
+        goto S0 /* Переходим к получению сообщения d0 по каналу 1 */
 }
 
 proctype B(chan Receiver_In) {
     mtype mt;
 
-    S0: Receiver_In?d0_Receiver ->
+    S0: Receiver_In?d0_Receiver -> /* Получено сообщение d0 */
             atomic {
-                receive_d0 = true;
-                receive_d1 = false;
-                currGlobalMt = d0_Receiver;
+                receive_d0 = true; /* Уточняем, что получено сообщение d0 */
+                receive_d1 = false; /* Но не d1 */
+                currGlobalMt = d0_Receiver; /* Текущее состояние системы - получено сообщение d0 */
             }
-        goto S1;
+        goto S1; /* Переходим к получению d1 */
 
-    S1: Receiver_In?d1_Receiver ->
+    S1: Receiver_In?d1_Receiver -> /* Получено сообщение d1 */
             atomic {
-                receive_d0 = false;
-                receive_d1 = true;
-                currGlobalMt = d0_Receiver;
+                receive_d0 = false; /* Уточняем, что получено не d0 */
+                receive_d1 = true; /* а D1 */
+                currGlobalMt = d0_Receiver; /* Текущее состояние системы - получено сообщение d0 (ПОЧЕМУ БЛЯТЬ НЕ D1) */
             }
-        goto S2;
+        goto S2; /* переходим к получению сообщения d0 */
 
-    S2: Receiver_In?d0_Receiver ->
+    S2: Receiver_In?d0_Receiver -> /* Повтор S0, судя по всему */
         atomic {
             receive_d0 = true;
             receive_d1 = false;
             currGlobalMt = d0_Receiver;
         }
-    goto S1;
+    goto S1; /* переходим к получению сообщения d1 */
 }
 
 init {
@@ -198,9 +198,9 @@ init {
     }
 }
 
-ltl f1 {[](send_d0 -> ((!send_d1) until (receive_d0)))}
-ltl f2 {[](send_d1 -> ((!send_d0) until receive_d1))}
-ltl f3 {[](receive_d0 -> ((!receive_d1) until send_d0))}
-ltl f4 {[](receive_d1 -> ((!receive_d0) until send_d1))}
-ltl f5 {[]((send_d0 -> <>(send_d1)) && (send_d1 -> <>(send_d0)))}
-ltl f6 {[](!timeout)}
+ltl f1 {[](send_d0 -> ((!send_d1) until (receive_d0)))} /* Если d0 посылается, то пока d0 не получен, d1 не будет послан */
+ltl f2 {[](send_d1 -> ((!send_d0) until receive_d1))} /* Если d1 посылается, то пока d1 не получен, d0 не будет послан */
+ltl f3 {[](receive_d0 -> ((!receive_d1) until send_d0))} /* Если d0 получен, то d1 не будет получен, пока d0 посылается */
+ltl f4 {[](receive_d1 -> ((!receive_d0) until send_d1))} /* Если d1 получен, то d0 не будет получен, пока d1 посылается */
+ltl f5 {[]((send_d0 -> <>(send_d1)) && (send_d1 -> <>(send_d0)))} /* Если d0 послан, то в будущем (F) d1 будет послан И если d1 послан, то в будущем (F) d0 будет послан */
+/*ltl f6 {[](!timeout)} /* Система никогда не зависнет */
